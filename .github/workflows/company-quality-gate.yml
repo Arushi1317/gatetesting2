@@ -55,6 +55,23 @@ jobs:
         with:
           token: ${{ secrets.quality_gate_repo_token || github.token }}
 
+      - name: Debug - verify scripts exist
+        shell: pwsh
+        run: |
+          Write-Host "Workspace: $env:GITHUB_WORKSPACE"
+          Write-Host "--- scripts folder ---"
+          if (Test-Path "$env:GITHUB_WORKSPACE\scripts") {
+            Get-ChildItem "$env:GITHUB_WORKSPACE\scripts" | Select-Object Name, Length
+          } else {
+            Write-Host "WARNING: scripts folder does not exist at $env:GITHUB_WORKSPACE\scripts"
+          }
+          Write-Host "--- config folder ---"
+          if (Test-Path "$env:GITHUB_WORKSPACE\config") {
+            Get-ChildItem "$env:GITHUB_WORKSPACE\config" | Select-Object Name
+          } else {
+            Write-Host "WARNING: config folder does not exist at $env:GITHUB_WORKSPACE\config"
+          }
+
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
@@ -79,33 +96,35 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          if (-not (Test-Path "./scripts/run_quality_gate.ps1")) {
-            Write-Warning "run_quality_gate.ps1 not found - skipping"
+          $scriptPath = "$env:GITHUB_WORKSPACE\scripts\run_quality_gate.ps1"
+          if (-not (Test-Path $scriptPath)) {
+            Write-Warning "run_quality_gate.ps1 not found at $scriptPath - skipping"
             exit 0
           }
           $params = @("-Configuration", "${{ inputs.configuration }}")
           if ("${{ inputs.strict_mode }}" -eq "true") { $params += "-StrictMode" }
           if ("${{ inputs.stack }}") { $params += @("-Stack", "${{ inputs.stack }}") }
-          Write-Host "Running: ./scripts/run_quality_gate.ps1 $($params -join ' ')"
-          ./scripts/run_quality_gate.ps1 @params
+          Write-Host "Running: $scriptPath $($params -join ' ')"
+          & $scriptPath @params
 
       - name: Generate PDFs
         if: ${{ inputs.generate_pdf }}
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          if (-not (Test-Path "./scripts/render_reports_to_pdf.ps1")) {
+          $scriptPath = "$env:GITHUB_WORKSPACE\scripts\render_reports_to_pdf.ps1"
+          if (-not (Test-Path $scriptPath)) {
             Write-Warning "render_reports_to_pdf.ps1 not found - skipping"
             exit 0
           }
-          ./scripts/render_reports_to_pdf.ps1 -ArtifactsRoot artifacts -BrandingConfig config/report-branding.json
+          & $scriptPath -ArtifactsRoot "$env:GITHUB_WORKSPACE\artifacts" -BrandingConfig "$env:GITHUB_WORKSPACE\config\report-branding.json"
 
       - name: Run truth validation
         if: ${{ inputs.run_truth_validation }}
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $latest = Get-ChildItem .\artifacts -Directory -ErrorAction SilentlyContinue |
+          $latest = Get-ChildItem "$env:GITHUB_WORKSPACE\artifacts" -Directory -ErrorAction SilentlyContinue |
             Where-Object { $_.Name -match '^\d{8}_\d{6}$' } |
             Sort-Object Name -Descending |
             Select-Object -First 1
@@ -113,22 +132,29 @@ jobs:
             Write-Warning "No artifacts run folder found - skipping truth validation"
             exit 0
           }
-          if (-not (Test-Path "./scripts/manual_truth_calculator.ps1")) {
+          $truthScript = "$env:GITHUB_WORKSPACE\scripts\manual_truth_calculator.ps1"
+          $compareScript = "$env:GITHUB_WORKSPACE\scripts\compare_reports_vs_truth.ps1"
+          if (-not (Test-Path $truthScript)) {
             Write-Warning "manual_truth_calculator.ps1 not found - skipping"
             exit 0
           }
-          ./scripts/manual_truth_calculator.ps1 -RunFolderPath $latest.FullName
-          ./scripts/compare_reports_vs_truth.ps1 -RunFolderPath $latest.FullName
+          if (-not (Test-Path $compareScript)) {
+            Write-Warning "compare_reports_vs_truth.ps1 not found - skipping"
+            exit 0
+          }
+          & $truthScript -RunFolderPath $latest.FullName
+          & $compareScript -RunFolderPath $latest.FullName
 
       - name: Extract gate outputs
         id: extract
         if: always()
         shell: pwsh
         run: |
-          if (-not (Test-Path .\artifacts)) {
-            New-Item -ItemType Directory -Path .\artifacts | Out-Null
+          $artifactsPath = "$env:GITHUB_WORKSPACE\artifacts"
+          if (-not (Test-Path $artifactsPath)) {
+            New-Item -ItemType Directory -Path $artifactsPath | Out-Null
           }
-          $latest = Get-ChildItem .\artifacts -Directory |
+          $latest = Get-ChildItem $artifactsPath -Directory |
             Where-Object { $_.Name -match '^\d{8}_\d{6}$' } |
             Sort-Object Name -Descending |
             Select-Object -First 1
@@ -159,5 +185,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: quality-gate-artifacts-${{ github.run_id }}
-          path: artifacts/**
+          path: ${{ github.workspace }}/artifacts/**
           if-no-files-found: warn
