@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   call-company-quality-gate:
-    uses: Arushi1317/gatetesting/.github/workflows/company-quality-gate.yml@main
+    uses: ${{ github.repository }}/.github/workflows/company-quality-gate.yml@${{ github.ref_name }}
     with:
       strict_mode: true
       generate_pdf: true
