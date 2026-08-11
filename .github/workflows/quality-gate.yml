@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   call-company-quality-gate:
-    uses: ${{ github.repository }}/.github/workflows/company-quality-gate.yml@${{ github.ref_name }}
+    uses: ./.github/workflows/company-quality-gate.yml
     with:
       strict_mode: true
       generate_pdf: true
