@@ -1,0 +1,163 @@
+name: company-quality-gate
+
+on:
+  workflow_call:
+    inputs:
+      stack:
+        description: "Optional stack override: dotnet | python | node"
+        required: false
+        type: string
+      strict_mode:
+        description: "Fail when critical evidence is missing"
+        required: false
+        type: boolean
+        default: true
+      generate_pdf:
+        description: "Generate branded PDF reports"
+        required: false
+        type: boolean
+        default: true
+      run_truth_validation:
+        description: "Run truth + comparison validation scripts"
+        required: false
+        type: boolean
+        default: true
+      configuration:
+        description: ".NET build configuration"
+        required: false
+        type: string
+        default: "Release"
+    secrets:
+      quality_gate_repo_token:
+        required: false
+    outputs:
+      gate_decision:
+        description: "Final gate decision"
+        value: ${{ jobs.quality-gate.outputs.gate_decision }}
+      report_quality:
+        description: "FULL | PARTIAL | FALLBACK"
+        value: ${{ jobs.quality-gate.outputs.report_quality }}
+      artifacts_run_folder:
+        description: "Run folder name under artifacts/"
+        value: ${{ jobs.quality-gate.outputs.artifacts_run_folder }}
+
+jobs:
+  quality-gate:
+    runs-on: windows-latest
+    outputs:
+      gate_decision: ${{ steps.extract.outputs.gate_decision }}
+      report_quality: ${{ steps.extract.outputs.report_quality }}
+      artifacts_run_folder: ${{ steps.extract.outputs.artifacts_run_folder }}
+
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.quality_gate_repo_token || github.token }}
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Install required tools
+        shell: pwsh
+        run: |
+          choco install pandoc wkhtmltopdf -y --no-progress
+          refreshenv
+
+      - name: Verify required tools
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet --version
+          if (-not (Get-Command pandoc -ErrorAction SilentlyContinue)) { throw "pandoc not found on runner" }
+          if (-not (Get-Command wkhtmltopdf -ErrorAction SilentlyContinue)) { throw "wkhtmltopdf not found on runner" }
+
+      - name: Run quality gate
+        id: gate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Test-Path "./scripts/run_quality_gate.ps1")) {
+            Write-Warning "run_quality_gate.ps1 not found - skipping"
+            exit 0
+          }
+          $params = @("-Configuration", "${{ inputs.configuration }}")
+          if ("${{ inputs.strict_mode }}" -eq "true") { $params += "-StrictMode" }
+          if ("${{ inputs.stack }}") { $params += @("-Stack", "${{ inputs.stack }}") }
+          Write-Host "Running: ./scripts/run_quality_gate.ps1 $($params -join ' ')"
+          ./scripts/run_quality_gate.ps1 @params
+
+      - name: Generate PDFs
+        if: ${{ inputs.generate_pdf }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Test-Path "./scripts/render_reports_to_pdf.ps1")) {
+            Write-Warning "render_reports_to_pdf.ps1 not found - skipping"
+            exit 0
+          }
+          ./scripts/render_reports_to_pdf.ps1 -ArtifactsRoot artifacts -BrandingConfig config/report-branding.json
+
+      - name: Run truth validation
+        if: ${{ inputs.run_truth_validation }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $latest = Get-ChildItem .\artifacts -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match '^\d{8}_\d{6}$' } |
+            Sort-Object Name -Descending |
+            Select-Object -First 1
+          if (-not $latest) {
+            Write-Warning "No artifacts run folder found - skipping truth validation"
+            exit 0
+          }
+          if (-not (Test-Path "./scripts/manual_truth_calculator.ps1")) {
+            Write-Warning "manual_truth_calculator.ps1 not found - skipping"
+            exit 0
+          }
+          ./scripts/manual_truth_calculator.ps1 -RunFolderPath $latest.FullName
+          ./scripts/compare_reports_vs_truth.ps1 -RunFolderPath $latest.FullName
+
+      - name: Extract gate outputs
+        id: extract
+        if: always()
+        shell: pwsh
+        run: |
+          if (-not (Test-Path .\artifacts)) {
+            New-Item -ItemType Directory -Path .\artifacts | Out-Null
+          }
+          $latest = Get-ChildItem .\artifacts -Directory |
+            Where-Object { $_.Name -match '^\d{8}_\d{6}$' } |
+            Sort-Object Name -Descending |
+            Select-Object -First 1
+
+          if (-not $latest) {
+            "gate_decision=CHANGES_REQUIRED" >> $env:GITHUB_OUTPUT
+            "report_quality=FALLBACK" >> $env:GITHUB_OUTPUT
+            "artifacts_run_folder=" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+
+          $metricsPath = Join-Path $latest.FullName "status/metrics.json"
+          $gateDecision = "CHANGES_REQUIRED"
+          $reportQuality = "FALLBACK"
+
+          if (Test-Path $metricsPath) {
+            $m = Get-Content $metricsPath -Raw | ConvertFrom-Json
+            if ($m.gateDecision) { $gateDecision = [string]$m.gateDecision }
+            if ($m.reportQuality) { $reportQuality = [string]$m.reportQuality }
+          }
+
+          "gate_decision=$gateDecision" >> $env:GITHUB_OUTPUT
+          "report_quality=$reportQuality" >> $env:GITHUB_OUTPUT
+          "artifacts_run_folder=$($latest.Name)" >> $env:GITHUB_OUTPUT
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-gate-artifacts-${{ github.run_id }}
+          path: artifacts/**
+          if-no-files-found: warn
