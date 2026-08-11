@@ -13,7 +13,9 @@ param(
 
 $ErrorActionPreference = "Continue"
 
-. (Join-Path $PSScriptRoot "quality_gate_config.ps1")
+$configScript = Join-Path $PSScriptRoot "quality_gate_config.ps1"
+if (-not (Test-Path $configScript)) { throw "Cannot find quality_gate_config.ps1 at: $configScript" }
+. $configScript
 
 function Write-Step {
     param([string]$Message)
