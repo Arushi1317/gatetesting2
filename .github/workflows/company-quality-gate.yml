@@ -55,6 +55,10 @@ jobs:
         with:
           token: ${{ secrets.quality_gate_repo_token || github.token }}
 
+      - name: Set PowerShell execution policy
+        shell: pwsh
+        run: Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope CurrentUser -Force
+
       - name: Debug - verify scripts exist
         shell: pwsh
         run: |
@@ -95,7 +99,7 @@ jobs:
         id: gate
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
+          Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
           $scriptPath = "$env:GITHUB_WORKSPACE\scripts\run_quality_gate.ps1"
           if (-not (Test-Path $scriptPath)) {
             Write-Warning "run_quality_gate.ps1 not found at $scriptPath - skipping"
@@ -111,7 +115,7 @@ jobs:
         if: ${{ inputs.generate_pdf }}
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
+          Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
           $scriptPath = "$env:GITHUB_WORKSPACE\scripts\render_reports_to_pdf.ps1"
           if (-not (Test-Path $scriptPath)) {
             Write-Warning "render_reports_to_pdf.ps1 not found - skipping"
@@ -123,7 +127,7 @@ jobs:
         if: ${{ inputs.run_truth_validation }}
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
+          Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
           $latest = Get-ChildItem "$env:GITHUB_WORKSPACE\artifacts" -Directory -ErrorAction SilentlyContinue |
             Where-Object { $_.Name -match '^\d{8}_\d{6}$' } |
             Sort-Object Name -Descending |
@@ -132,7 +136,7 @@ jobs:
             Write-Warning "No artifacts run folder found - skipping truth validation"
             exit 0
           }
-          $truthScript = "$env:GITHUB_WORKSPACE\scripts\manual_truth_calculator.ps1"
+          $truthScript   = "$env:GITHUB_WORKSPACE\scripts\manual_truth_calculator.ps1"
           $compareScript = "$env:GITHUB_WORKSPACE\scripts\compare_reports_vs_truth.ps1"
           if (-not (Test-Path $truthScript)) {
             Write-Warning "manual_truth_calculator.ps1 not found - skipping"
@@ -142,7 +146,7 @@ jobs:
             Write-Warning "compare_reports_vs_truth.ps1 not found - skipping"
             exit 0
           }
-          & $truthScript -RunFolderPath $latest.FullName
+          & $truthScript   -RunFolderPath $latest.FullName
           & $compareScript -RunFolderPath $latest.FullName
 
       - name: Extract gate outputs
