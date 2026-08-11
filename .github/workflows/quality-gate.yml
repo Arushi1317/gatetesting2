@@ -1,0 +1,20 @@
+name: quality-gate-wrapper
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: quality-gate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  call-company-quality-gate:
+    uses: Arushi1317/gatetesting/.github/workflows/company-quality-gate.yml@main
+    with:
+      strict_mode: true
+      generate_pdf: true
+      run_truth_validation: true
+      # stack: dotnet
+    secrets: inherit
