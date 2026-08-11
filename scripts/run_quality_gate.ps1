@@ -13,11 +13,7 @@ param(
 
 $ErrorActionPreference = "Continue"
 
-$_configPath = Join-Path $PSScriptRoot "quality_gate_config.ps1"
-Write-Host "[gate] Loading config from: $_configPath"
-if (-not (Test-Path $_configPath)) { throw "FATAL: quality_gate_config.ps1 not found at $_configPath" }
-$_configContent = Get-Content -Path $_configPath -Raw -Encoding UTF8
-Invoke-Expression $_configContent
+Invoke-Expression (Get-Content -Path (Join-Path $PSScriptRoot "quality_gate_config.ps1") -Raw -Encoding UTF8)
 
 function Write-Step {
     param([string]$Message)
