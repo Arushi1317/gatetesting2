@@ -11,9 +11,22 @@ param(
     [string]$LegacyScoringConfig = "config/report-scoring.json"
 )
 
+Write-Host "[gate] Param snapshot: Configuration='$Configuration' ProjectRoot='$ProjectRoot' Stack='$Stack' StrictMode='$($StrictMode.IsPresent)' GeneratePdf='$GeneratePdf'"
+
+# Guardrail: if CI argument binding shifts and ProjectRoot becomes "Release", reset safely.
+if ($ProjectRoot -eq "Release" -and $Configuration -eq "Release") {
+    Write-Warning "[gate] Detected arg-shift pattern. Resetting ProjectRoot to repo root."
+    $ProjectRoot = ""
+}
+
 $ErrorActionPreference = "Continue"
 
-Invoke-Expression (Get-Content -Path (Join-Path $PSScriptRoot "quality_gate_config.ps1") -Raw -Encoding UTF8)
+# Load shared config helpers
+$configScriptPath = Join-Path $PSScriptRoot "quality_gate_config.ps1"
+if (-not (Test-Path $configScriptPath)) {
+    throw "quality_gate_config.ps1 not found at: $configScriptPath"
+}
+Invoke-Expression (Get-Content -Path $configScriptPath -Raw -Encoding UTF8)
 
 function Write-Step {
     param([string]$Message)
@@ -293,7 +306,6 @@ function Parse-SarifMetrics {
                         "warning" { $warnings++ }
                         default { $notes++ }
                     }
-
                 }
             }
         }
