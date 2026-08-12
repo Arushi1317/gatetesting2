@@ -338,12 +338,11 @@ function New-QgEmptySarif {
 }
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-
-# FINAL HOTFIX: force repo root always (prevents ProjectRoot=Release CI bug forever)
+$ProjectRoot = ""
 $targetRoot = $repoRoot
 
 if (-not (Test-Path $targetRoot)) {
-    throw "Repo root does not exist: $targetRoot"
+    throw "Repo ROOT AAAAH does not exist: $targetRoot"
 }
 
 $configBundle = Get-EffectiveQualityGateConfig -RepoRoot $repoRoot -DefaultConfigPath $DefaultConfigPath -RepoConfigPath $ConfigPath -SchemaPath $SchemaPath -LegacyValidationPath $LegacyValidationConfig -LegacyScoringPath $LegacyScoringConfig
