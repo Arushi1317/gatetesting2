@@ -13,11 +13,6 @@ param(
 
 Write-Host "[gate] Param snapshot: Configuration='$Configuration' ProjectRoot='$ProjectRoot' Stack='$Stack' StrictMode='$($StrictMode.IsPresent)' GeneratePdf='$GeneratePdf'"
 
-if ($ProjectRoot -eq "Release" -and $Configuration -eq "Release") {
-    Write-Warning "[gate] Detected arg-shift pattern. Resetting ProjectRoot to repo root."
-    $ProjectRoot = ""
-}
-
 $ErrorActionPreference = "Continue"
 
 $configScriptPath = Join-Path $PSScriptRoot "quality_gate_config.ps1"
@@ -344,22 +339,11 @@ function New-QgEmptySarif {
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 
-if ([string]::Equals($ProjectRoot, "Release", [System.StringComparison]::OrdinalIgnoreCase)) {
-    Write-Warning "[gate] ProjectRoot incorrectly bound to 'Release'. Resetting to repo root."
-    $ProjectRoot = ""
-}
+# FINAL HOTFIX: force repo root always (prevents ProjectRoot=Release CI bug forever)
+$targetRoot = $repoRoot
 
-if (-not [string]::IsNullOrWhiteSpace($ProjectRoot)) {
-    $candidateRoot = Get-QgAbsolutePath -BasePath $repoRoot -PathValue $ProjectRoot
-    if (-not (Test-Path $candidateRoot)) {
-        Write-Warning "[gate] Provided ProjectRoot '$ProjectRoot' not found at '$candidateRoot'. Falling back to repo root."
-        $ProjectRoot = ""
-    }
-}
-
-$targetRoot = if ([string]::IsNullOrWhiteSpace($ProjectRoot)) { $repoRoot } else { (Get-QgAbsolutePath -BasePath $repoRoot -PathValue $ProjectRoot) }
 if (-not (Test-Path $targetRoot)) {
-    throw "ProjectRoot does not exist: $targetRoot"
+    throw "Repo root does not exist: $targetRoot"
 }
 
 $configBundle = Get-EffectiveQualityGateConfig -RepoRoot $repoRoot -DefaultConfigPath $DefaultConfigPath -RepoConfigPath $ConfigPath -SchemaPath $SchemaPath -LegacyValidationPath $LegacyValidationConfig -LegacyScoringPath $LegacyScoringConfig
