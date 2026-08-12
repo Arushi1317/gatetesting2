@@ -67,13 +67,13 @@ jobs:
           if (Test-Path "$env:GITHUB_WORKSPACE\scripts") {
             Get-ChildItem "$env:GITHUB_WORKSPACE\scripts" | Select-Object Name, Length
           } else {
-            Write-Host "WARNING: scripts folder does not exist at $env:GITHUB_WORKSPACE\scripts"
+            Write-Host "WARNING: scripts folder does not exist"
           }
           Write-Host "--- config folder ---"
           if (Test-Path "$env:GITHUB_WORKSPACE\config") {
             Get-ChildItem "$env:GITHUB_WORKSPACE\config" | Select-Object Name
           } else {
-            Write-Host "WARNING: config folder does not exist at $env:GITHUB_WORKSPACE\config"
+            Write-Host "WARNING: config folder does not exist"
           }
 
       - name: Setup .NET 8
@@ -105,11 +105,28 @@ jobs:
             Write-Warning "run_quality_gate.ps1 not found at $scriptPath - skipping"
             exit 0
           }
-          $params = @("-Configuration", "${{ inputs.configuration }}")
-          if ("${{ inputs.strict_mode }}" -eq "true") { $params += "-StrictMode" }
-          if ("${{ inputs.stack }}") { $params += @("-Stack", "${{ inputs.stack }}") }
-          Write-Host "Running: $scriptPath $($params -join ' ')"
-          & $scriptPath @params
+
+          $cfg    = "${{ inputs.configuration }}"
+          $stk    = "${{ inputs.stack }}"
+          $strict = [System.Convert]::ToBoolean("${{ inputs.strict_mode }}")
+          $genPdf = [System.Convert]::ToBoolean("${{ inputs.generate_pdf }}")
+
+          Write-Host "Running: $scriptPath -Configuration '$cfg' -ProjectRoot '' -StrictMode:$strict -GeneratePdf:$genPdf $(if($stk){ "-Stack '$stk'" })"
+
+          if ([string]::IsNullOrWhiteSpace($stk)) {
+            & $scriptPath `
+              -Configuration $cfg `
+              -ProjectRoot "" `
+              -StrictMode:$strict `
+              -GeneratePdf:$genPdf
+          } else {
+            & $scriptPath `
+              -Configuration $cfg `
+              -ProjectRoot "" `
+              -Stack $stk `
+              -StrictMode:$strict `
+              -GeneratePdf:$genPdf
+          }
 
       - name: Generate PDFs
         if: ${{ inputs.generate_pdf }}
@@ -136,8 +153,10 @@ jobs:
             Write-Warning "No artifacts run folder found - skipping truth validation"
             exit 0
           }
+
           $truthScript   = "$env:GITHUB_WORKSPACE\scripts\manual_truth_calculator.ps1"
           $compareScript = "$env:GITHUB_WORKSPACE\scripts\compare_reports_vs_truth.ps1"
+
           if (-not (Test-Path $truthScript)) {
             Write-Warning "manual_truth_calculator.ps1 not found - skipping"
             exit 0
@@ -146,6 +165,7 @@ jobs:
             Write-Warning "compare_reports_vs_truth.ps1 not found - skipping"
             exit 0
           }
+
           & $truthScript   -RunFolderPath $latest.FullName
           & $compareScript -RunFolderPath $latest.FullName
 
@@ -158,6 +178,7 @@ jobs:
           if (-not (Test-Path $artifactsPath)) {
             New-Item -ItemType Directory -Path $artifactsPath | Out-Null
           }
+
           $latest = Get-ChildItem $artifactsPath -Directory |
             Where-Object { $_.Name -match '^\d{8}_\d{6}$' } |
             Sort-Object Name -Descending |
@@ -170,7 +191,7 @@ jobs:
             exit 0
           }
 
-          $metricsPath = Join-Path $latest.FullName "status/metrics.json"
+          $metricsPath = Join-Path $latest.FullName "status\metrics.json"
           $gateDecision = "CHANGES_REQUIRED"
           $reportQuality = "FALLBACK"
 
