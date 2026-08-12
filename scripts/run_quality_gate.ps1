@@ -13,7 +13,6 @@ param(
 
 Write-Host "[gate] Param snapshot: Configuration='$Configuration' ProjectRoot='$ProjectRoot' Stack='$Stack' StrictMode='$($StrictMode.IsPresent)' GeneratePdf='$GeneratePdf'"
 
-# Guardrail: if CI argument binding shifts and ProjectRoot becomes "Release", reset safely.
 if ($ProjectRoot -eq "Release" -and $Configuration -eq "Release") {
     Write-Warning "[gate] Detected arg-shift pattern. Resetting ProjectRoot to repo root."
     $ProjectRoot = ""
@@ -21,7 +20,6 @@ if ($ProjectRoot -eq "Release" -and $Configuration -eq "Release") {
 
 $ErrorActionPreference = "Continue"
 
-# Load shared config helpers
 $configScriptPath = Join-Path $PSScriptRoot "quality_gate_config.ps1"
 if (-not (Test-Path $configScriptPath)) {
     throw "quality_gate_config.ps1 not found at: $configScriptPath"
@@ -345,6 +343,20 @@ function New-QgEmptySarif {
 }
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
+
+if ([string]::Equals($ProjectRoot, "Release", [System.StringComparison]::OrdinalIgnoreCase)) {
+    Write-Warning "[gate] ProjectRoot incorrectly bound to 'Release'. Resetting to repo root."
+    $ProjectRoot = ""
+}
+
+if (-not [string]::IsNullOrWhiteSpace($ProjectRoot)) {
+    $candidateRoot = Get-QgAbsolutePath -BasePath $repoRoot -PathValue $ProjectRoot
+    if (-not (Test-Path $candidateRoot)) {
+        Write-Warning "[gate] Provided ProjectRoot '$ProjectRoot' not found at '$candidateRoot'. Falling back to repo root."
+        $ProjectRoot = ""
+    }
+}
+
 $targetRoot = if ([string]::IsNullOrWhiteSpace($ProjectRoot)) { $repoRoot } else { (Get-QgAbsolutePath -BasePath $repoRoot -PathValue $ProjectRoot) }
 if (-not (Test-Path $targetRoot)) {
     throw "ProjectRoot does not exist: $targetRoot"
@@ -729,7 +741,6 @@ $engLines | Set-Content -Path $engineeringReportPath -Encoding UTF8
 $mgmtLines | Set-Content -Path $managementReportPath -Encoding UTF8
 $summaryLines | Set-Content -Path $summaryReportPath -Encoding UTF8
 
-# Backward-compatible report names
 Copy-Item -Path $engineeringReportPath -Destination (Join-Path $reportsDir "Engineering.md") -Force
 Copy-Item -Path $managementReportPath -Destination (Join-Path $reportsDir "Management.md") -Force
 Copy-Item -Path $summaryReportPath -Destination (Join-Path $reportsDir "Summary.md") -Force
