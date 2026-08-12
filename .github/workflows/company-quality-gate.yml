@@ -85,7 +85,6 @@ jobs:
         shell: pwsh
         run: |
           choco install pandoc wkhtmltopdf -y --no-progress
-          refreshenv
 
       - name: Verify required tools
         shell: pwsh
@@ -94,42 +93,40 @@ jobs:
           dotnet --version
           if (-not (Get-Command pandoc -ErrorAction SilentlyContinue)) { throw "pandoc not found on runner" }
           if (-not (Get-Command wkhtmltopdf -ErrorAction SilentlyContinue)) { throw "wkhtmltopdf not found on runner" }
-          
-          
-  - name: Run quality gate
-  id: gate
-  shell: pwsh
-  run: |
-    Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
 
-    $scriptPath = "$env:GITHUB_WORKSPACE\scripts\run_quality_gate.ps1"
-    if (-not (Test-Path $scriptPath)) {
-      Write-Warning "run_quality_gate.ps1 not found at $scriptPath - skipping"
-      exit 0
-    }
+      - name: Run quality gate
+        id: gate
+        shell: pwsh
+        run: |
+          Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
 
-    $cfg    = "${{ inputs.configuration }}"
-    $stack  = "${{ inputs.stack }}"
-    $strict = [System.Convert]::ToBoolean("${{ inputs.strict_mode }}")
-    $genPdf = [System.Convert]::ToBoolean("${{ inputs.generate_pdf }}")
+          $scriptPath = "$env:GITHUB_WORKSPACE\scripts\run_quality_gate.ps1"
+          if (-not (Test-Path $scriptPath)) {
+            Write-Warning "run_quality_gate.ps1 not found at $scriptPath - skipping"
+            exit 0
+          }
 
-    Write-Host "DEBUG CMD => & `"$scriptPath`" -Configuration `"$cfg`" -ProjectRoot `"`" -StrictMode:$strict -GeneratePdf:$genPdf $(if($stack){ "-Stack `"$stack`"" })"
+          $cfg    = "${{ inputs.configuration }}"
+          $stack  = "${{ inputs.stack }}"
+          $strict = [System.Convert]::ToBoolean("${{ inputs.strict_mode }}")
+          $genPdf = [System.Convert]::ToBoolean("${{ inputs.generate_pdf }}")
 
-    if ([string]::IsNullOrWhiteSpace($stack)) {
-      & $scriptPath `
-        -Configuration $cfg `
-        -ProjectRoot "" `
-        -StrictMode:$strict `
-        -GeneratePdf:$genPdf
-    }
-    else {
-      & $scriptPath `
-        -Configuration $cfg `
-        -ProjectRoot "" `
-        -Stack $stack `
-        -StrictMode:$strict `
-        -GeneratePdf:$genPdf
-    }
+          Write-Host "DEBUG CMD => & `"$scriptPath`" -Configuration `"$cfg`" -StrictMode:$strict -GeneratePdf:$genPdf $(if($stack){ "-Stack `"$stack`"" })"
+
+          if ([string]::IsNullOrWhiteSpace($stack)) {
+            & $scriptPath `
+              -Configuration $cfg `
+              -StrictMode:$strict `
+              -GeneratePdf:$genPdf
+          }
+          else {
+            & $scriptPath `
+              -Configuration $cfg `
+              -Stack $stack `
+              -StrictMode:$strict `
+              -GeneratePdf:$genPdf
+          }
+
       - name: Generate PDFs
         if: ${{ inputs.generate_pdf }}
         shell: pwsh
@@ -181,7 +178,7 @@ jobs:
             New-Item -ItemType Directory -Path $artifactsPath | Out-Null
           }
 
-          $latest = Get-ChildItem $artifactsPath -Directory |
+          $latest = Get-ChildItem $artifactsPath -Directory -ErrorAction SilentlyContinue |
             Where-Object { $_.Name -match '^\d{8}_\d{6}$' } |
             Sort-Object Name -Descending |
             Select-Object -First 1
