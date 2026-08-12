@@ -95,39 +95,26 @@ jobs:
           if (-not (Get-Command pandoc -ErrorAction SilentlyContinue)) { throw "pandoc not found on runner" }
           if (-not (Get-Command wkhtmltopdf -ErrorAction SilentlyContinue)) { throw "wkhtmltopdf not found on runner" }
 
-      - name: Run quality gate
-        id: gate
-        shell: pwsh
-        run: |
-          Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
-          $scriptPath = "$env:GITHUB_WORKSPACE\scripts\run_quality_gate.ps1"
-          if (-not (Test-Path $scriptPath)) {
-            Write-Warning "run_quality_gate.ps1 not found at $scriptPath - skipping"
-            exit 0
-          }
+     - name: Run quality gate
+  id: gate
+  shell: pwsh
+  run: |
+    Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
+    $scriptPath = "$env:GITHUB_WORKSPACE\scripts\run_quality_gate.ps1"
+    if (-not (Test-Path $scriptPath)) {
+      Write-Warning "run_quality_gate.ps1 not found at $scriptPath - skipping"
+      exit 0
+    }
 
-          $cfg    = "${{ inputs.configuration }}"
-          $stk    = "${{ inputs.stack }}"
-          $strict = [System.Convert]::ToBoolean("${{ inputs.strict_mode }}")
-          $genPdf = [System.Convert]::ToBoolean("${{ inputs.generate_pdf }}")
+    $strict = [System.Convert]::ToBoolean("${{ inputs.strict_mode }}")
+    $genPdf = [System.Convert]::ToBoolean("${{ inputs.generate_pdf }}")
+    $stack  = "${{ inputs.stack }}"
 
-          Write-Host "Running: $scriptPath -Configuration '$cfg' -ProjectRoot '' -StrictMode:$strict -GeneratePdf:$genPdf $(if($stk){ "-Stack '$stk'" })"
-
-          if ([string]::IsNullOrWhiteSpace($stk)) {
-            & $scriptPath `
-              -Configuration $cfg `
-              -ProjectRoot "" `
-              -StrictMode:$strict `
-              -GeneratePdf:$genPdf
-          } else {
-            & $scriptPath `
-              -Configuration $cfg `
-              -ProjectRoot "" `
-              -Stack $stk `
-              -StrictMode:$strict `
-              -GeneratePdf:$genPdf
-          }
-
+    if ([string]::IsNullOrWhiteSpace($stack)) {
+      & $scriptPath -Configuration "${{ inputs.configuration }}" -ProjectRoot "" -StrictMode:$strict -GeneratePdf:$genPdf
+    } else {
+      & $scriptPath -Configuration "${{ inputs.configuration }}" -ProjectRoot "" -Stack $stack -StrictMode:$strict -GeneratePdf:$genPdf
+    }
       - name: Generate PDFs
         if: ${{ inputs.generate_pdf }}
         shell: pwsh
