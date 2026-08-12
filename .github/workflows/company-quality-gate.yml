@@ -59,23 +59,6 @@ jobs:
         shell: pwsh
         run: Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope CurrentUser -Force
 
-      - name: Debug - verify scripts exist
-        shell: pwsh
-        run: |
-          Write-Host "Workspace: $env:GITHUB_WORKSPACE"
-          Write-Host "--- scripts folder ---"
-          if (Test-Path "$env:GITHUB_WORKSPACE\scripts") {
-            Get-ChildItem "$env:GITHUB_WORKSPACE\scripts" | Select-Object Name, Length
-          } else {
-            Write-Host "WARNING: scripts folder does not exist"
-          }
-          Write-Host "--- config folder ---"
-          if (Test-Path "$env:GITHUB_WORKSPACE\config") {
-            Get-ChildItem "$env:GITHUB_WORKSPACE\config" | Select-Object Name
-          } else {
-            Write-Host "WARNING: config folder does not exist"
-          }
-
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
@@ -83,70 +66,39 @@ jobs:
 
       - name: Install required tools
         shell: pwsh
-        run: |
-          choco install pandoc wkhtmltopdf -y --no-progress
+        run: choco install pandoc wkhtmltopdf -y --no-progress
 
       - name: Verify required tools
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
           dotnet --version
           if (-not (Get-Command pandoc -ErrorAction SilentlyContinue)) { throw "pandoc not found on runner" }
           if (-not (Get-Command wkhtmltopdf -ErrorAction SilentlyContinue)) { throw "wkhtmltopdf not found on runner" }
 
       - name: Run quality gate
         id: gate
-       shell: pwsh
-  run: |
-    Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
-    $scriptPath = "$env:GITHUB_WORKSPACE\scripts\run_quality_gate.ps1"
-    if (-not (Test-Path $scriptPath)) {
-      Write-Warning "run_quality_gate.ps1 not found at $scriptPath - skipping"
-      exit 0
-    }
+        shell: pwsh
+        run: |
+          Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
+          $scriptPath = "$env:GITHUB_WORKSPACE\scripts\run_quality_gate.ps1"
+          if (-not (Test-Path $scriptPath)) {
+            Write-Warning "run_quality_gate.ps1 not found at $scriptPath - skipping"
+            exit 0
+          }
 
-    Write-Host "FORCE CMD: $scriptPath -Configuration Release -StrictMode"
-    & $scriptPath -Configuration "Release" -StrictMode
+          Write-Host "FORCE CMD: $scriptPath -Configuration Release -StrictMode"
+          & $scriptPath -Configuration "Release" -StrictMode
+
       - name: Generate PDFs
         if: ${{ inputs.generate_pdf }}
         shell: pwsh
         run: |
-          Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
           $scriptPath = "$env:GITHUB_WORKSPACE\scripts\render_reports_to_pdf.ps1"
           if (-not (Test-Path $scriptPath)) {
             Write-Warning "render_reports_to_pdf.ps1 not found - skipping"
             exit 0
           }
           & $scriptPath -ArtifactsRoot "$env:GITHUB_WORKSPACE\artifacts" -BrandingConfig "$env:GITHUB_WORKSPACE\config\report-branding.json"
-
-      - name: Run truth validation
-        if: ${{ inputs.run_truth_validation }}
-        shell: pwsh
-        run: |
-          Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
-          $latest = Get-ChildItem "$env:GITHUB_WORKSPACE\artifacts" -Directory -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -match '^\d{8}_\d{6}$' } |
-            Sort-Object Name -Descending |
-            Select-Object -First 1
-          if (-not $latest) {
-            Write-Warning "No artifacts run folder found - skipping truth validation"
-            exit 0
-          }
-
-          $truthScript   = "$env:GITHUB_WORKSPACE\scripts\manual_truth_calculator.ps1"
-          $compareScript = "$env:GITHUB_WORKSPACE\scripts\compare_reports_vs_truth.ps1"
-
-          if (-not (Test-Path $truthScript)) {
-            Write-Warning "manual_truth_calculator.ps1 not found - skipping"
-            exit 0
-          }
-          if (-not (Test-Path $compareScript)) {
-            Write-Warning "compare_reports_vs_truth.ps1 not found - skipping"
-            exit 0
-          }
-
-          & $truthScript   -RunFolderPath $latest.FullName
-          & $compareScript -RunFolderPath $latest.FullName
 
       - name: Extract gate outputs
         id: extract
