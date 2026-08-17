@@ -12,6 +12,7 @@ param(
 )
 
 Write-Host "[gate] Param snapshot: Configuration='$Configuration' ProjectRoot='$ProjectRoot' Stack='$Stack' StrictMode='$($StrictMode.IsPresent)' GeneratePdf='$GeneratePdf'"
+Write-Host "### SCRIPT_VERSION_2026_08_17_1 ###"
 
 $ErrorActionPreference = "Continue"
 
