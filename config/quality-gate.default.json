@@ -61,7 +61,7 @@
       "requiredTools": ["dotnet"],
       "setupCommands": [],
       "buildCommands": ["dotnet build {targetPath} --configuration {configuration} --no-incremental"],
-      "testCommands": ["dotnet test {repoRoot}\\tests\\HealthDemo.Tests\\HealthDemo.Tests.csproj --configuration {configuration} --logger trx;LogFileName={rawTestResults}\\results.trx --collect:\"XPlat Code Coverage\" --results-directory {rawTestResults}"],
+      "testCommands": "testCommands": ["dotnet test {repoRoot}\\tests\\HealthDemo.Tests\\HealthDemo.Tests.csproj --configuration {configuration} --results-directory {rawTestResults} --logger trx;LogFileName=results.trx --collect:\"XPlat Code Coverage\""],
       "analysisCommands": []
     },
     "node": {
