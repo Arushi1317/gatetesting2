@@ -1,12 +1,14 @@
+using Xunit;
+
 public class BasicTests
 {
-    [Xunit.Fact]
+    [Fact]
     public void OnePlusOneEqualsTwo()
     {
         Assert.Equal(2, 1 + 1);
     }
 
-    [Xunit.Fact]
+    [Fact]
     public void StringIsNotEmpty()
     {
         Assert.NotEmpty("HealthDemo");
