@@ -66,14 +66,21 @@ jobs:
 
       - name: Install required tools
         shell: pwsh
-        run: choco install pandoc wkhtmltopdf -y --no-progress
+        run: |
+          choco install pandoc -y --no-progress
+          choco install wkhtmltopdf -y --no-progress
+          refreshenv
 
       - name: Verify required tools
         shell: pwsh
         run: |
           dotnet --version
-          if (-not (Get-Command pandoc -ErrorAction SilentlyContinue)) { throw "pandoc not found on runner" }
-          if (-not (Get-Command wkhtmltopdf -ErrorAction SilentlyContinue)) { throw "wkhtmltopdf not found on runner" }
+          Write-Host "Pandoc check:"
+          if (-not (Get-Command pandoc -ErrorAction SilentlyContinue)) {
+            Write-Warning "pandoc not found - PDF generation will be skipped"
+          } else {
+            pandoc --version | Select-Object -First 1
+          }
 
       - name: Run quality gate
         id: gate
@@ -83,23 +90,54 @@ jobs:
           Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
           $scriptPath = "$env:GITHUB_WORKSPACE\scripts\run_quality_gate.ps1"
           if (-not (Test-Path $scriptPath)) {
-            Write-Warning "run_quality_gate.ps1 not found at $scriptPath - skipping"
-            exit 0
+            Write-Error "run_quality_gate.ps1 not found at $scriptPath"
+            exit 1
           }
+          Write-Host "Calling: $scriptPath -Configuration ${{ inputs.configuration }} -StrictMode:$${{ inputs.strict_mode }}"
+          & $scriptPath `
+            -Configuration "${{ inputs.configuration }}" `
+            -StrictMode:$${{ inputs.strict_mode }} `
+            -GeneratePdf:$${{ inputs.generate_pdf }}
 
-          Write-Host "FORCE CMD: $scriptPath -Configuration Release -StrictMode"
-          & $scriptPath -Configuration "Release" -StrictMode
-
-      - name: Generate PDFs
-        if: ${{ inputs.generate_pdf }}
+      - name: Run truth validation
+        if: ${{ inputs.run_truth_validation }}
         shell: pwsh
         run: |
-          $scriptPath = "$env:GITHUB_WORKSPACE\scripts\render_reports_to_pdf.ps1"
+          $scriptPath = "$env:GITHUB_WORKSPACE\scripts\quality-gate.ps1"
           if (-not (Test-Path $scriptPath)) {
-            Write-Warning "render_reports_to_pdf.ps1 not found - skipping"
+            Write-Warning "quality-gate.ps1 not found - skipping truth validation"
             exit 0
           }
-          & $scriptPath -ArtifactsRoot "$env:GITHUB_WORKSPACE\artifacts" -BrandingConfig "$env:GITHUB_WORKSPACE\config\report-branding.json"
+          $latest = Get-ChildItem "$env:GITHUB_WORKSPACE\artifacts" -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match '^\d{8}_\d{6}$' } |
+            Sort-Object Name -Descending |
+            Select-Object -First 1
+          if (-not $latest) {
+            Write-Warning "No run folder found under artifacts - skipping truth validation"
+            exit 0
+          }
+          Write-Host "Running truth validation on: $($latest.FullName)"
+          & $scriptPath -RunFolderPath $latest.FullName
+
+      - name: Run report vs truth comparison
+        if: ${{ inputs.run_truth_validation }}
+        shell: pwsh
+        run: |
+          $scriptPath = "$env:GITHUB_WORKSPACE\scripts\report-vs-truth.ps1"
+          if (-not (Test-Path $scriptPath)) {
+            Write-Warning "report-vs-truth.ps1 not found - skipping comparison"
+            exit 0
+          }
+          $latest = Get-ChildItem "$env:GITHUB_WORKSPACE\artifacts" -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match '^\d{8}_\d{6}$' } |
+            Sort-Object Name -Descending |
+            Select-Object -First 1
+          if (-not $latest) {
+            Write-Warning "No run folder found - skipping comparison"
+            exit 0
+          }
+          Write-Host "Running comparison on: $($latest.FullName)"
+          & $scriptPath -RunFolderPath $latest.FullName
 
       - name: Extract gate outputs
         id: extract
@@ -110,29 +148,24 @@ jobs:
           if (-not (Test-Path $artifactsPath)) {
             New-Item -ItemType Directory -Path $artifactsPath | Out-Null
           }
-
           $latest = Get-ChildItem $artifactsPath -Directory -ErrorAction SilentlyContinue |
             Where-Object { $_.Name -match '^\d{8}_\d{6}$' } |
             Sort-Object Name -Descending |
             Select-Object -First 1
-
           if (-not $latest) {
             "gate_decision=CHANGES_REQUIRED" >> $env:GITHUB_OUTPUT
             "report_quality=FALLBACK" >> $env:GITHUB_OUTPUT
             "artifacts_run_folder=" >> $env:GITHUB_OUTPUT
             exit 0
           }
-
           $metricsPath = Join-Path $latest.FullName "status\metrics.json"
           $gateDecision = "CHANGES_REQUIRED"
           $reportQuality = "FALLBACK"
-
           if (Test-Path $metricsPath) {
             $m = Get-Content $metricsPath -Raw | ConvertFrom-Json
             if ($m.gateDecision) { $gateDecision = [string]$m.gateDecision }
             if ($m.reportQuality) { $reportQuality = [string]$m.reportQuality }
           }
-
           "gate_decision=$gateDecision" >> $env:GITHUB_OUTPUT
           "report_quality=$reportQuality" >> $env:GITHUB_OUTPUT
           "artifacts_run_folder=$($latest.Name)" >> $env:GITHUB_OUTPUT
