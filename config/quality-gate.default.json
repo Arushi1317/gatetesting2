@@ -41,7 +41,8 @@
     "pathPatterns": [
       "**/coverage.xml",
       "**/cobertura.xml",
-      "**/coverage/**.xml"
+      "**/coverage/**.xml",
+      "**/coverage.cobertura.xml"
     ]
   },
   "trx": {
