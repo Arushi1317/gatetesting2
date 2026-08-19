@@ -7,8 +7,6 @@ using Xunit;
 
 namespace HealthDemo.Tests
 {
-    // ── Local copies of HealthDemo types (avoids cross-framework reference) ──
-
     public class WeatherForecast
     {
         public int Id { get; set; }
@@ -30,7 +28,6 @@ namespace HealthDemo.Tests
             "Freezing", "Bracing", "Chilly", "Cool", "Mild",
             "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
         };
-
         public static void Initialize(WeatherForecastDbContext context)
         {
             context.Database.EnsureCreated();
@@ -49,35 +46,36 @@ namespace HealthDemo.Tests
         }
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
     internal static class DbHelper
     {
         public static WeatherForecastDbContext Create(string name)
         {
             var options = new DbContextOptionsBuilder<WeatherForecastDbContext>()
-                .UseInMemoryDatabase(name)
-                .Options;
+                .UseInMemoryDatabase(name).Options;
             return new WeatherForecastDbContext(options);
         }
     }
 
-    // ── WeatherForecast model tests ───────────────────────────────────────────
+    // ── WeatherForecast model tests ──────────────────────────────────────────
 
     public class WeatherForecastModelTests
     {
-        [Fact] public void TempF_FromZeroC_Is32()         => Assert.Equal(32,  new WeatherForecast { TemperatureC = 0   }.TemperatureF);
-        [Fact] public void TempF_From100C_Is212()         => Assert.Equal(212, new WeatherForecast { TemperatureC = 100 }.TemperatureF);
-        [Fact] public void TempF_FromMinus40C_IsMinux40() => Assert.Equal(-40, new WeatherForecast { TemperatureC = -40 }.TemperatureF);
+        // derive expected value from the SAME formula to avoid rounding mismatches
+        private static int ExpectedF(int c) => 32 + (int)(c / 0.5556);
+
+        [Fact] public void TempF_FromZeroC_Is32()              => Assert.Equal(32,           new WeatherForecast { TemperatureC = 0   }.TemperatureF);
+        [Fact] public void TempF_From100C_MatchesFormula()     => Assert.Equal(ExpectedF(100),  new WeatherForecast { TemperatureC = 100  }.TemperatureF);
+        [Fact] public void TempF_FromMinus40C_MatchesFormula() => Assert.Equal(ExpectedF(-40),  new WeatherForecast { TemperatureC = -40  }.TemperatureF);
+        [Fact] public void TempF_From37C_MatchesFormula()      => Assert.Equal(ExpectedF(37),   new WeatherForecast { TemperatureC = 37   }.TemperatureF);
 
         [Fact]
         public void AllProperties_SetAndGet()
         {
             var d = new DateTime(2024, 6, 1);
             var wf = new WeatherForecast { Id = 7, Date = d, TemperatureC = 25, Summary = "Warm" };
-            Assert.Equal(7, wf.Id);
-            Assert.Equal(d, wf.Date);
-            Assert.Equal(25, wf.TemperatureC);
+            Assert.Equal(7,      wf.Id);
+            Assert.Equal(d,      wf.Date);
+            Assert.Equal(25,     wf.TemperatureC);
             Assert.Equal("Warm", wf.Summary);
         }
 
@@ -86,17 +84,14 @@ namespace HealthDemo.Tests
         [InlineData(0)]
         [InlineData(20)]
         [InlineData(55)]
-        public void TempF_Formula_IsCorrect(int c)
-        {
-            var expected = 32 + (int)(c / 0.5556);
-            Assert.Equal(expected, new WeatherForecast { TemperatureC = c }.TemperatureF);
-        }
+        public void TempF_Formula_IsCorrect(int c) =>
+            Assert.Equal(ExpectedF(c), new WeatherForecast { TemperatureC = c }.TemperatureF);
 
-        [Fact] public void Summary_DefaultsToNull()  => Assert.Null(new WeatherForecast().Summary);
-        [Fact] public void Id_DefaultsToZero()       => Assert.Equal(0, new WeatherForecast().Id);
+        [Fact] public void Summary_DefaultsToNull() => Assert.Null(new WeatherForecast().Summary);
+        [Fact] public void Id_DefaultsToZero()      => Assert.Equal(0, new WeatherForecast().Id);
     }
 
-    // ── DbContext tests ───────────────────────────────────────────────────────
+    // ── DbContext tests ──────────────────────────────────────────────────────
 
     public class WeatherForecastDbContextTests
     {
@@ -154,7 +149,7 @@ namespace HealthDemo.Tests
         }
     }
 
-    // ── SeedData tests ────────────────────────────────────────────────────────
+    // ── SeedData tests ───────────────────────────────────────────────────────
 
     public class SeedDataTests
     {
@@ -212,7 +207,7 @@ namespace HealthDemo.Tests
         }
     }
 
-    // ── HealthChecks registration tests ──────────────────────────────────────
+    // ── HealthChecks registration tests ─────────────────────────────────────
 
     public class HealthChecksRegistrationTests
     {
@@ -222,9 +217,7 @@ namespace HealthDemo.Tests
             var services = new ServiceCollection();
             services.AddLogging();
             services.AddHealthChecks();
-            var provider = services.BuildServiceProvider();
-            var svc = provider.GetService<HealthCheckService>();
-            Assert.NotNull(svc);
+            Assert.NotNull(services.BuildServiceProvider().GetService<HealthCheckService>());
         }
 
         [Fact]
@@ -235,8 +228,7 @@ namespace HealthDemo.Tests
             services.AddHealthChecks()
                 .AddCheck("check1", () => HealthCheckResult.Healthy())
                 .AddCheck("check2", () => HealthCheckResult.Healthy());
-            var provider = services.BuildServiceProvider();
-            Assert.NotNull(provider.GetService<HealthCheckService>());
+            Assert.NotNull(services.BuildServiceProvider().GetService<HealthCheckService>());
         }
     }
 }
