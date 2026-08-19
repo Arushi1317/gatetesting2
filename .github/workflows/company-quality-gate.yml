@@ -84,6 +84,7 @@ jobs:
 
       - name: Run quality gate
         id: gate
+        continue-on-error: true
         shell: pwsh
         run: |
           Write-Host "### MARKER_XYZ ###"
@@ -177,3 +178,17 @@ jobs:
           name: quality-gate-artifacts-${{ github.run_id }}
           path: ${{ github.workspace }}/artifacts/**
           if-no-files-found: warn
+
+      - name: Set final job status based on gate decision
+        if: always()
+        shell: pwsh
+        run: |
+          $decision = "${{ steps.extract.outputs.gate_decision }}"
+          Write-Host "Gate decision: $decision"
+          if ($decision -eq "APPROVED_FOR_MERGE") {
+            Write-Host "✅ Gate passed - approved for merge"
+            exit 0
+          } else {
+            Write-Host "⚠️ Gate decision: $decision - review reports before merging"
+            exit 1
+          }
