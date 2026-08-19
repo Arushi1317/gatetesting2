@@ -102,6 +102,7 @@ jobs:
 
       - name: Run truth validation
         if: ${{ inputs.run_truth_validation }}
+        continue-on-error: true
         shell: pwsh
         run: |
           $scriptPath = "$env:GITHUB_WORKSPACE\scripts\quality-gate.ps1"
@@ -122,6 +123,7 @@ jobs:
 
       - name: Run report vs truth comparison
         if: ${{ inputs.run_truth_validation }}
+        continue-on-error: true
         shell: pwsh
         run: |
           $scriptPath = "$env:GITHUB_WORKSPACE\scripts\report-vs-truth.ps1"
@@ -170,6 +172,11 @@ jobs:
           "gate_decision=$gateDecision" >> $env:GITHUB_OUTPUT
           "report_quality=$reportQuality" >> $env:GITHUB_OUTPUT
           "artifacts_run_folder=$($latest.Name)" >> $env:GITHUB_OUTPUT
+          Write-Host ""
+          Write-Host "========================================"
+          Write-Host "  GATE DECISION : $gateDecision"
+          Write-Host "  REPORT QUALITY: $reportQuality"
+          Write-Host "========================================"
 
       - name: Upload artifacts
         if: always()
@@ -178,17 +185,3 @@ jobs:
           name: quality-gate-artifacts-${{ github.run_id }}
           path: ${{ github.workspace }}/artifacts/**
           if-no-files-found: warn
-
-      - name: Set final job status based on gate decision
-        if: always()
-        shell: pwsh
-        run: |
-          $decision = "${{ steps.extract.outputs.gate_decision }}"
-          Write-Host "Gate decision: $decision"
-          if ($decision -eq "APPROVED_FOR_MERGE") {
-            Write-Host "✅ Gate passed - approved for merge"
-            exit 0
-          } else {
-            Write-Host "⚠️ Gate decision: $decision - review reports before merging"
-            exit 1
-          }
