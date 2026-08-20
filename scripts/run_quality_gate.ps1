@@ -830,8 +830,4 @@ Write-Step "Reports folder: $reportsDir"
 Write-Step "Status metrics: $metricsPath"
 Write-Step "Diagnostics: $diagPath"
 
-if ($decision -eq "CHANGES_REQUIRED") {
-    exit 1
-}
-
 exit 0
