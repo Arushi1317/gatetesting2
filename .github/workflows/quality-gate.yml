@@ -17,5 +17,3 @@ jobs:
       generate_pdf: true
       run_truth_validation: true
     secrets: inherit
-    # Allow the workflow to complete even when gate says CHANGES_REQUIRED
-    continue-on-error: true
