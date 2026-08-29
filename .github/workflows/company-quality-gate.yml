@@ -163,12 +163,100 @@ jobs:
           $reportQuality = "FALLBACK"
           if (Test-Path $metricsPath) {
             $m = Get-Content $metricsPath -Raw | ConvertFrom-Json
-            if ($m.gateDecision) { $gateDecision = [string]$m.gateDecision }
+            if ($m.gateDecision)  { $gateDecision  = [string]$m.gateDecision }
             if ($m.reportQuality) { $reportQuality = [string]$m.reportQuality }
           }
-          "gate_decision=$gateDecision" >> $env:GITHUB_OUTPUT
-          "report_quality=$reportQuality" >> $env:GITHUB_OUTPUT
+          "gate_decision=$gateDecision"       >> $env:GITHUB_OUTPUT
+          "report_quality=$reportQuality"     >> $env:GITHUB_OUTPUT
           "artifacts_run_folder=$($latest.Name)" >> $env:GITHUB_OUTPUT
+
+      - name: Post PR comment
+        if: always() && github.event_name == 'pull_request'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.quality_gate_repo_token || github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          GATE_DECISION: ${{ steps.extract.outputs.gate_decision }}
+          REPORT_QUALITY: ${{ steps.extract.outputs.report_quality }}
+          RUN_FOLDER: ${{ steps.extract.outputs.artifacts_run_folder }}
+        run: |
+          $metricsPath = "$env:GITHUB_WORKSPACE\artifacts\$env:RUN_FOLDER\status\metrics.json"
+          $testTotal = "N/A"; $testPassed = "N/A"; $testFailed = "N/A"
+          $coveragePct = "N/A"; $sarifErrors = "N/A"; $readinessIndex = "N/A"
+          $failedTests = ""
+          $m = $null
+
+          if (Test-Path $metricsPath) {
+            $m = Get-Content $metricsPath -Raw | ConvertFrom-Json
+            $testTotal      = $m.testTotal
+            $testPassed     = $m.testPassed
+            $testFailed     = $m.testFailed
+            $coveragePct    = "$($m.coveragePct)%"
+            $sarifErrors    = $m.sarifErrors
+            $readinessIndex = $m.readinessIndex
+          }
+
+          $testReportPath = "$env:GITHUB_WORKSPACE\artifacts\$env:RUN_FOLDER\reports\test-report.md"
+          if (Test-Path $testReportPath) {
+            $lines = Get-Content $testReportPath
+            $inFailed = $false
+            $failedList = @()
+            foreach ($line in $lines) {
+              if ($line -match "^## Failed Tests Detail") { $inFailed = $true; continue }
+              if ($inFailed -and $line -match "^## ") { break }
+              if ($inFailed -and $line -match "^- ") { $failedList += $line }
+            }
+            if ($failedList.Count -gt 0) { $failedTests = ($failedList | Select-Object -First 5) -join "`n" }
+          }
+
+          $icon         = if ($env:GATE_DECISION -eq "APPROVED_FOR_MERGE") { "✅" } else { "❌" }
+          $coverageIcon = if ($m -and [double]$m.coveragePct -ge 60) { "✅" } else { "⚠️" }
+          $testIcon     = if ($m -and [int]$m.testFailed -eq 0) { "✅" } else { "❌" }
+          $staticIcon   = if ($m -and [int]$m.sarifErrors -eq 0) { "✅" } else { "❌" }
+
+          $failedSection = if ($failedTests) { "### ❌ Failed Tests`n$failedTests`n" } else { "" }
+          $mergeMsg = if ($env:GATE_DECISION -eq "APPROVED_FOR_MERGE") {
+            "**All checks passed. This PR is ready to merge.**"
+          } else {
+            "**This PR has issues that should be resolved before merging. Download the full reports from the Actions artifacts for details.**"
+          }
+
+          $body = @"
+          ## $icon Quality Gate — $env:GATE_DECISION
+
+          | Metric | Value |
+          | --- | --- |
+          | Report Quality | $env:REPORT_QUALITY |
+          | Readiness Index | $readinessIndex / 100 |
+          | $testIcon Tests | $testPassed passed, $testFailed failed (total: $testTotal) |
+          | $coverageIcon Line Coverage | $coveragePct (threshold: 60%) |
+          | $staticIcon SARIF Errors | $sarifErrors |
+
+          $failedSection
+          ### Merge Readiness
+          $mergeMsg
+
+          ---
+          *Quality gate run: ``$env:RUN_FOLDER`` | [View full run]($env:GITHUB_SERVER_URL/$env:REPO/actions/runs/$env:GITHUB_RUN_ID)*
+          "@
+
+          $body = ($body -split "`n" | ForEach-Object { $_.TrimStart() }) -join "`n"
+
+          $payload = @{ body = $body } | ConvertTo-Json -Compress
+          $uri = "https://api.github.com/repos/$env:REPO/issues/$env:PR_NUMBER/comments"
+          $headers = @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept        = "application/vnd.github+json"
+            "X-GitHub-Api-Version" = "2022-11-28"
+          }
+          try {
+            Invoke-RestMethod -Uri $uri -Method Post -Headers $headers -Body $payload -ContentType "application/json"
+            Write-Host "[gate] PR comment posted successfully."
+          }
+          catch {
+            Write-Warning "[gate] Failed to post PR comment: $($_.Exception.Message)"
+          }
 
       - name: Upload artifacts
         if: always()
