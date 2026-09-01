@@ -65,7 +65,7 @@
         "dotnet build {targetPath} --configuration {configuration} --no-incremental"
       ],
       "testCommands": [
-        "dotnet test {testProjectPath} --configuration {configuration} --results-directory {rawTestResults} --logger \"trx;LogFileName={testProjectName}.trx\" --collect \"XPlat Code Coverage\" --settings {repoRoot}\\coverlet.runsettings || dotnet test {testProjectPath} --configuration {configuration} --results-directory {rawTestResults} --logger \"trx;LogFileName={testProjectName}.trx\""
+        "dotnet test {testProjectPath} --configuration {configuration} --results-directory {rawTestResults} --logger \"trx;LogFileName={testProjectName}.trx\" --collect \"XPlat Code Coverage\" --settings {repoRoot}\\coverlet.runsettings"
       ],
       "analysisCommands": []
     },
