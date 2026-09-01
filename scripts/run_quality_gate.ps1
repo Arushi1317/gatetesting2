@@ -432,9 +432,7 @@ if ($effectiveStack -eq "dotnet" -and @(Get-ChildItem -Path $evidenceStatic -Rec
     New-QgEmptySarif -OutputPath (Join-Path $evidenceStatic "quality-gate.sarif") -Producer "roslyn"
     Copy-Item -Path (Join-Path $evidenceStatic "quality-gate.sarif") -Destination (Join-Path $rawSarif "quality-gate.sarif") -Force -ErrorAction SilentlyContinue
 }
-
-# Search both rawCoverage AND rawTestResults — XPlat Code Coverage drops the file
-# into a GUID subfolder under raw/test-results, not raw/coverage
+# Search both rawCoverage AND rawTestResults — XPlat drops coverage into a GUID subfolder
 $coverageCandidates = @(
     Get-ChildItem -Path $rawCoverage    -Recurse -File -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -match "(?i)cobertura|coverage\.xml|jacoco|opencover|lcov\.info|coverage\.out" }
@@ -447,6 +445,85 @@ if ($coveragePrimary.Count -gt 0) {
     Write-Step "Coverage file found: $($coveragePrimary[0].FullName)"
 }
 
+# ── Coverlet standalone fallback ──────────────────────────────────────────────
+# If XPlat produced a file but line-rate is 0, the test project has no ProjectReference
+# or TFM mismatch. Run coverlet directly against the compiled production DLL.
+if ($effectiveStack -eq "dotnet" -and (Test-Path $normalizedCobertura)) {
+    try {
+        [xml]$cx       = Get-Content $normalizedCobertura -Raw -Encoding UTF8
+        $lineRate      = [double]$cx.coverage.'line-rate'
+        $linesValid    = [int]$cx.coverage.'lines-valid'
+        $needsFallback = ($lineRate -eq 0 -and $linesValid -gt 0)
+    } catch { $needsFallback = $false }
+
+    if ($needsFallback) {
+        Write-Step "Coverage line-rate=0 with $linesValid valid lines — running coverlet standalone fallback"
+
+        # Install coverlet.console global tool if not present
+        $coverletExe = (Get-Command coverlet -ErrorAction SilentlyContinue)?.Source
+        if (-not $coverletExe) {
+            Write-Step "Installing coverlet.console global tool..."
+            dotnet tool install coverlet.console --global 2>&1 | Out-Null
+            $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
+            $coverletExe = (Get-Command coverlet -ErrorAction SilentlyContinue)?.Source
+        }
+
+        if ($coverletExe) {
+            # Find production DLLs — exclude test assemblies and framework assemblies
+            $prodDlls = @(Get-ChildItem -Path $targetRoot -Recurse -Filter "*.dll" -ErrorAction SilentlyContinue |
+                Where-Object {
+                    $_.FullName -match "\\bin\\" -and
+                    $_.FullName -notmatch "\\(obj|ref|publish)[\\/]" -and
+                    $_.Name     -notmatch "(?i)test|xunit|coverlet|microsoft|system|netstandard" -and
+                    $_.FullName -notmatch "[\\/]tests?[\\/]"
+                } | Sort-Object LastWriteTimeUtc -Descending)
+
+            # Find test DLLs
+            $testDlls = @(Get-ChildItem -Path $targetRoot -Recurse -Filter "*.dll" -ErrorAction SilentlyContinue |
+                Where-Object {
+                    $_.FullName -match "\\bin\\" -and
+                    $_.FullName -notmatch "\\(obj|ref|publish)[\\/]" -and
+                    ($_.Name -match "(?i)\.tests?\." -or $_.FullName -match "[\\/]tests?[\\/]")
+                } | Sort-Object LastWriteTimeUtc -Descending)
+
+            if ($prodDlls.Count -gt 0 -and $testDlls.Count -gt 0) {
+                $prodDll = $prodDlls[0]
+                $testDll = $testDlls[0]
+                $fallbackOutput = Join-Path $rawCoverage "fallback-cobertura.xml"
+
+                Write-Step "Coverlet fallback: instrumenting $($prodDll.Name) via $($testDll.Name)"
+
+                & $coverletExe $prodDll.FullName `
+                    --target "dotnet" `
+                    --targetargs "vstest `"$($testDll.FullName)`" --logger:trx" `
+                    --format cobertura `
+                    --output $fallbackOutput `
+                    --verbosity minimal 2>&1 | Out-Host
+
+                if (Test-Path $fallbackOutput) {
+                    try {
+                        [xml]$fx    = Get-Content $fallbackOutput -Raw -Encoding UTF8
+                        $fallbackLR = [double]$fx.coverage.'line-rate'
+                        if ($fallbackLR -gt 0) {
+                            Copy-Item $fallbackOutput $normalizedCobertura -Force
+                            Write-Step "Coverlet fallback succeeded: line-rate=$fallbackLR"
+                        } else {
+                            Write-Step "Coverlet fallback also returned 0 — coverage genuinely not reachable from tests"
+                        }
+                    } catch {
+                        Write-Step "Coverlet fallback output could not be parsed"
+                    }
+                } else {
+                    Write-Step "Coverlet fallback did not produce output"
+                }
+            } else {
+                Write-Step "Coverlet fallback: could not locate production/test DLLs"
+            }
+        } else {
+            Write-Step "Coverlet fallback: coverlet.console tool not available — skipping"
+        }
+    }
+}
 # ── Metrics ───────────────────────────────────────────────────────────────────
 $testFiles           = @(Get-ChildItem -Path $evidenceTests -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -eq ".trx" -or $_.Name -match "(?i)junit|TEST-.*\.xml" })
 $sarifFiles          = @(Get-ChildItem -Path $evidenceStatic -Recurse -File -Filter "*.sarif" -ErrorAction SilentlyContinue)
