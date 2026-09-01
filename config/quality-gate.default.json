@@ -61,22 +61,33 @@
     "dotnet": {
       "requiredTools": ["dotnet"],
       "setupCommands": [],
-      "buildCommands": ["dotnet build {targetPath} --configuration {configuration} --no-incremental"],
-      "testCommands": ["dotnet test {repoRoot}\\tests\\HealthDemo.Tests\\HealthDemo.Tests.csproj --configuration {configuration} --results-directory {rawTestResults} --logger \"trx;LogFileName=results.trx\" --collect \"XPlat Code Coverage\""],
+      "buildCommands": [
+        "dotnet build {targetPath} --configuration {configuration} --no-incremental"
+      ],
+      "testCommands": [
+        "dotnet test {testProjectPath} --configuration {configuration} --results-directory {rawTestResults} --logger \"trx;LogFileName={testProjectName}.trx\" --collect \"XPlat Code Coverage\" --settings {repoRoot}\\coverlet.runsettings || dotnet test {testProjectPath} --configuration {configuration} --results-directory {rawTestResults} --logger \"trx;LogFileName={testProjectName}.trx\""
+      ],
       "analysisCommands": []
     },
     "node": {
       "requiredTools": ["node", "npm"],
       "setupCommands": ["npm ci"],
       "buildCommands": ["npm run build --if-present"],
-      "testCommands": ["npm test -- --reporter junit --outputFile {rawTestResults}\\junit.xml"],
+      "testCommands": [
+        "npm test -- --reporter junit --outputFile {rawTestResults}\\junit.xml"
+      ],
       "analysisCommands": []
     },
     "python": {
       "requiredTools": ["python"],
-      "setupCommands": ["python -m pip install --upgrade pip", "pip install -r requirements.txt"],
+      "setupCommands": [
+        "python -m pip install --upgrade pip",
+        "pip install -r requirements.txt"
+      ],
       "buildCommands": [],
-      "testCommands": ["python -m pytest --junitxml={rawTestResults}\\junit.xml --cov=. --cov-report=xml:{rawCoverage}\\coverage.xml"],
+      "testCommands": [
+        "python -m pytest --junitxml={rawTestResults}\\junit.xml --cov=. --cov-report=xml:{rawCoverage}\\coverage.xml"
+      ],
       "analysisCommands": []
     },
     "java": {
@@ -90,7 +101,9 @@
       "requiredTools": ["go"],
       "setupCommands": [],
       "buildCommands": ["go build ./..."],
-      "testCommands": ["go test ./... -v -coverprofile={rawCoverage}\\coverage.out"],
+      "testCommands": [
+        "go test ./... -v -coverprofile={rawCoverage}\\coverage.out"
+      ],
       "analysisCommands": []
     },
     "rust": {
