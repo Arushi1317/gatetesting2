@@ -1,6 +1,5 @@
 {
   "version": "1.0.0",
-
   "policy": {
     "mode": "permissive",
     "failOnBuildError": false,
@@ -8,39 +7,35 @@
     "minCompletenessPct": 0,
     "minConfidence": "Low"
   },
-
   "artifacts": {
     "root": "artifacts",
     "layout": {
       "rawTestResults": "raw/test-results",
-      "rawCoverage":    "raw/coverage",
-      "rawSarif":       "raw/sarif",
-      "status":         "status",
-      "validation":     "validation"
+      "rawCoverage": "raw/coverage",
+      "rawSarif": "raw/sarif",
+      "status": "status",
+      "validation": "validation"
     }
   },
-
   "tolerances": {
-    "testCounts":        0,
-    "coveragePct":       0.5,
+    "testCounts": 0,
+    "coveragePct": 0.5,
     "branchCoveragePct": 0.5,
-    "sarifCounts":       0
+    "sarifCounts": 0
   },
-
   "scoring": {
     "weights": {
-      "staticQualityWeight":       0.35,
-      "testWeight":                0.30,
-      "coverageWeight":            0.25,
-      "securityWeight":            0.10,
+      "staticQualityWeight": 0.35,
+      "testWeight": 0.30,
+      "coverageWeight": 0.25,
+      "securityWeight": 0.10,
       "staticErrorPenaltyPerItem": 8
     },
     "thresholds": {
-      "goMin":            85,
+      "goMin": 85,
       "conditionalGoMin": 70
     }
   },
-
   "coverage": {
     "format": "cobertura",
     "pathPatterns": [
@@ -50,7 +45,6 @@
       "**/coverage.cobertura.xml"
     ]
   },
-
   "trx": {
     "pathPatterns": [
       "**/*.trx",
@@ -58,61 +52,72 @@
       "**/junit*.xml"
     ]
   },
-
   "sarif": {
     "pathPatterns": [
       "**/*.sarif"
     ]
   },
-
   "stacks": {
     "dotnet": {
-      "requiredTools":    ["dotnet"],
-      "setupCommands":    [],
-      "buildCommands":    ["dotnet build {targetPath} --configuration {configuration} --no-incremental"],
-      "testCommands":     ["dotnet test {repoRoot}\\tests\\HealthDemo.Tests\\HealthDemo.Tests.csproj --configuration {configuration} --results-directory {rawTestResults} --logger \"trx;LogFileName=results.trx\" --collect \"XPlat Code Coverage\""],
+      "requiredTools": ["dotnet"],
+      "setupCommands": [],
+      "buildCommands": [
+        "dotnet build {targetPath} --configuration {configuration} --no-incremental"
+      ],
+      "testCommands": [
+        "dotnet test {testProjectPath} --configuration {configuration} --results-directory {rawTestResults} --logger \"trx;LogFileName={testProjectName}.trx\" --collect \"XPlat Code Coverage\" --settings {repoRoot}\\coverlet.runsettings || dotnet test {testProjectPath} --configuration {configuration} --results-directory {rawTestResults} --logger \"trx;LogFileName={testProjectName}.trx\""
+      ],
       "analysisCommands": []
     },
     "node": {
-      "requiredTools":    ["node", "npm"],
-      "setupCommands":    ["npm ci"],
-      "buildCommands":    ["npm run build --if-present"],
-      "testCommands":     ["npm test -- --reporter junit --outputFile {rawTestResults}\\junit.xml"],
+      "requiredTools": ["node", "npm"],
+      "setupCommands": ["npm ci"],
+      "buildCommands": ["npm run build --if-present"],
+      "testCommands": [
+        "npm test -- --reporter junit --outputFile {rawTestResults}\\junit.xml"
+      ],
       "analysisCommands": []
     },
     "python": {
-      "requiredTools":    ["python"],
-      "setupCommands":    ["python -m pip install --upgrade pip", "pip install -r requirements.txt"],
-      "buildCommands":    [],
-      "testCommands":     ["python -m pytest --junitxml={rawTestResults}\\junit.xml --cov=. --cov-report=xml:{rawCoverage}\\coverage.xml"],
+      "requiredTools": ["python"],
+      "setupCommands": [
+        "python -m pip install --upgrade pip",
+        "pip install -r requirements.txt"
+      ],
+      "buildCommands": [],
+      "testCommands": [
+        "python -m pytest --junitxml={rawTestResults}\\junit.xml --cov=. --cov-report=xml:{rawCoverage}\\coverage.xml"
+      ],
       "analysisCommands": []
     },
     "java": {
-      "requiredTools":    [],
-      "setupCommands":    [],
-      "buildCommands":    [],
-      "testCommands":     [],
+      "requiredTools": [],
+      "setupCommands": [],
+      "buildCommands": [],
+      "testCommands": [],
       "analysisCommands": []
     },
     "go": {
-      "requiredTools":    ["go"],
-      "setupCommands":    [],
-      "buildCommands":    ["go build ./..."],
-      "testCommands":     ["go test ./... -v -coverprofile={rawCoverage}\\coverage.out"],
+      "requiredTools": ["go"],
+      "setupCommands": [],
+      "buildCommands": ["go build ./..."],
+      "testCommands": [
+        "go test ./... -v -coverprofile={rawCoverage}\\coverage.out"
+      ],
       "analysisCommands": []
     },
     "rust": {
-      "requiredTools":    ["cargo"],
-      "setupCommands":    [],
-      "buildCommands":    ["cargo build --release"],
-      "testCommands":     ["cargo test"],
+      "requiredTools": ["cargo"],
+      "setupCommands": [],
+      "buildCommands": ["cargo build --release"],
+      "testCommands": ["cargo test"],
       "analysisCommands": []
     },
     "unknown": {
-      "requiredTools":    [],
-      "setupCommands":    [],
-      "buildCommands":    [],
-      "testCommands":     [],
+      "requiredTools": [],
+      "setupCommands": [],
+      "buildCommands": [],
+      "testCommands": [],
       "analysisCommands": []
     }
   }
