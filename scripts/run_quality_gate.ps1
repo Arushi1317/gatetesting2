@@ -565,27 +565,9 @@ elseif ($missingTools.Count -gt 0) {
 
 $gateReasons = New-Object System.Collections.Generic.List[string]
 $decision    = "CHANGES_REQUIRED"
-
-# Approval only when ALL quality criteria pass
-if ($reportQuality -eq "FULL" -and
-    $testMetrics.failed -eq 0 -and
-    $sarifMetrics.errors -eq 0 -and
-    $buildFailed -eq 0 -and
-    $coverageMetrics.linePct -ge 60 -and
-    $coverageMetrics.branchPct -ge 50) {
+if ($reportQuality -eq "FULL" -and $testMetrics.failed -eq 0 -and $sarifMetrics.errors -eq 0 -and $buildFailed -eq 0) {
     $decision = "APPROVED_FOR_MERGE"
 }
-
-if ($managementTemplateReason -like "*fallback-missing-critical-inputs*") { $decision = "CHANGES_REQUIRED"; $gateReasons.Add("Template fallback indicates missing critical evidence.") | Out-Null }
-if ($reportQuality -ne "FULL" -and $decision -eq "APPROVED_FOR_MERGE")    { $decision = "CHANGES_REQUIRED"; $gateReasons.Add("Approval is allowed only for FULL report quality.") | Out-Null }
-if ($isStrict -and $missingCritical.Count -gt 0)                          { $decision = "CHANGES_REQUIRED"; $gateReasons.Add("Strict mode: missing critical evidence is not allowed.") | Out-Null }
-if ($isStrict -and $reportQuality -in @("PARTIAL", "FALLBACK"))           { $decision = "CHANGES_REQUIRED"; $gateReasons.Add("Strict mode: PARTIAL/FALLBACK report quality is not allowed.") | Out-Null }
-if ($buildFailed -gt 0 -and [bool]$cfg.policy.failOnBuildError -and $isStrict) { $decision = "CHANGES_REQUIRED"; $gateReasons.Add("Strict mode: build failed.") | Out-Null }
-if ($sarifMetrics.errors -gt 0 -and $isStrict)                            { $decision = "CHANGES_REQUIRED"; $gateReasons.Add("Strict mode: error-level SARIF findings detected.") | Out-Null }
-if ($testMetrics.failed -gt 0)                                             { $decision = "CHANGES_REQUIRED"; $gateReasons.Add("$($testMetrics.failed) test(s) failed.") | Out-Null }
-if ($coverageMetrics.linePct -lt 60)                                       { $decision = "CHANGES_REQUIRED"; $gateReasons.Add("Line coverage $($coverageMetrics.linePct)% is below 60% threshold.") | Out-Null }
-if ($coverageMetrics.branchPct -lt 50)                                     { $decision = "CHANGES_REQUIRED"; $gateReasons.Add("Branch coverage $($coverageMetrics.branchPct)% is below 50% threshold.") | Out-Null }
-if ($decision -eq "CHANGES_REQUIRED" -and $gateReasons.Count -eq 0)       { $gateReasons.Add("Quality gate rules did not satisfy approval criteria.") | Out-Null }
 
 if ($managementTemplateReason -like "*fallback-missing-critical-inputs*") { $decision = "CHANGES_REQUIRED"; $gateReasons.Add("Template fallback indicates missing critical evidence.") | Out-Null }
 if ($reportQuality -ne "FULL" -and $decision -eq "APPROVED_FOR_MERGE")    { $decision = "CHANGES_REQUIRED"; $gateReasons.Add("Approval is allowed only for FULL report quality.") | Out-Null }
