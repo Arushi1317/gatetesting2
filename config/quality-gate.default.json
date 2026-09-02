@@ -67,7 +67,9 @@
       "testCommands": [
         "dotnet test {testProjectPath} --configuration {configuration} --results-directory {rawTestResults} --logger \"trx;LogFileName={testProjectName}.trx\" --collect \"XPlat Code Coverage\" --settings {repoRoot}\\coverlet.runsettings"
       ],
-      "analysisCommands": []
+      "analysisCommands": [
+        "dotnet build {targetPath} --configuration {configuration} /p:RunAnalyzers=true /p:ErrorLog={rawSarif}\\roslyn.sarif /p:ReportAnalyzer=true"
+      ]
     },
     "node": {
       "requiredTools": ["node", "npm"],
