@@ -136,7 +136,6 @@ function Invoke-QgCommand {
         $exitCode = $LASTEXITCODE
         if ($null -eq $exitCode) { $exitCode = 0 }
         $entry.exitCode  = [int]$exitCode
-        # Test phase: non-zero exit means test failures — that is evidence, not an infra error
         $isTestPhase     = ($Label -eq "test")
         $entry.succeeded = ($exitCode -eq 0 -or $isTestPhase)
         if (-not $entry.succeeded -and -not $Optional) { $entry.reason = "nonzero-exit" }
@@ -288,7 +287,6 @@ function New-QgEmptySarif {
 "@ | Set-Content -Path $OutputPath -Encoding UTF8
 }
 
-# ── Paths & config ────────────────────────────────────────────────────────────
 $repoRoot    = Split-Path -Parent $PSScriptRoot
 $ProjectRoot = ""
 $targetRoot  = $repoRoot
@@ -402,7 +400,6 @@ elseif ($effectiveStack -eq "python") {
     }
 }
 
-# ── Evidence collection ───────────────────────────────────────────────────────
 $testMatches  = @(Find-QgEvidenceFiles -RepoRoot $targetRoot -RunRoot $runRoot -Patterns @($cfg.trx.pathPatterns))
 $testMatches += @(Get-ChildItem -Path $rawTestResults -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -eq ".trx" -or $_.Name -match "(?i)junit|TEST-.*\.xml" })
 $testMatches  = @($testMatches | Sort-Object FullName -Unique)
@@ -419,7 +416,7 @@ $coverageMatches  = @($coverageMatches | Sort-Object FullName -Unique)
 foreach ($f in @($coverageMatches)) { Copy-Item -Path $f.FullName -Destination (Join-Path $rawCoverage $f.Name) -Force -ErrorAction SilentlyContinue }
 
 $sarifMatches  = @(Find-QgEvidenceFiles -RepoRoot $targetRoot -RunRoot $runRoot -Patterns @($cfg.sarif.pathPatterns))
-$sarifMatches += @(Get-ChildItem -Path $rawSarif       -Recurse -File -Filter "*.sarif" -ErrorAction SilentlyContinue)
+$sarifMatches += @(Get-ChildItem -Path $rawSarif -Recurse -File -Filter "*.sarif" -ErrorAction SilentlyContinue)
 $sarifMatches += @(Get-ChildItem -Path $evidenceStatic -Recurse -File -Filter "*.sarif" -ErrorAction SilentlyContinue)
 $sarifMatches  = @($sarifMatches | Sort-Object FullName -Unique)
 foreach ($f in @($sarifMatches)) {
@@ -432,7 +429,7 @@ if ($effectiveStack -eq "dotnet" -and @(Get-ChildItem -Path $evidenceStatic -Rec
     New-QgEmptySarif -OutputPath (Join-Path $evidenceStatic "quality-gate.sarif") -Producer "roslyn"
     Copy-Item -Path (Join-Path $evidenceStatic "quality-gate.sarif") -Destination (Join-Path $rawSarif "quality-gate.sarif") -Force -ErrorAction SilentlyContinue
 }
-# Search both rawCoverage AND rawTestResults — XPlat drops coverage into a GUID subfolder
+
 $coverageCandidates = @(
     Get-ChildItem -Path $rawCoverage    -Recurse -File -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -match "(?i)cobertura|coverage\.xml|jacoco|opencover|lcov\.info|coverage\.out" }
@@ -445,9 +442,6 @@ if ($coveragePrimary.Count -gt 0) {
     Write-Step "Coverage file found: $($coveragePrimary[0].FullName)"
 }
 
-# ── Coverlet standalone fallback ──────────────────────────────────────────────
-# If XPlat produced a file but line-rate is 0, the test project has no ProjectReference
-# or TFM mismatch. Run coverlet directly against the compiled production DLL.
 if ($effectiveStack -eq "dotnet" -and (Test-Path $normalizedCobertura)) {
     try {
         [xml]$cx       = Get-Content $normalizedCobertura -Raw -Encoding UTF8
@@ -459,7 +453,6 @@ if ($effectiveStack -eq "dotnet" -and (Test-Path $normalizedCobertura)) {
     if ($needsFallback) {
         Write-Step "Coverage line-rate=0 with $linesValid valid lines — running coverlet standalone fallback"
 
-        # Install coverlet.console global tool if not present
         $coverletExe = (Get-Command coverlet -ErrorAction SilentlyContinue)?.Source
         if (-not $coverletExe) {
             Write-Step "Installing coverlet.console global tool..."
@@ -469,7 +462,6 @@ if ($effectiveStack -eq "dotnet" -and (Test-Path $normalizedCobertura)) {
         }
 
         if ($coverletExe) {
-            # Find production DLLs — exclude test assemblies and framework assemblies
             $prodDlls = @(Get-ChildItem -Path $targetRoot -Recurse -Filter "*.dll" -ErrorAction SilentlyContinue |
                 Where-Object {
                     $_.FullName -match "\\bin\\" -and
@@ -478,7 +470,6 @@ if ($effectiveStack -eq "dotnet" -and (Test-Path $normalizedCobertura)) {
                     $_.FullName -notmatch "[\\/]tests?[\\/]"
                 } | Sort-Object LastWriteTimeUtc -Descending)
 
-            # Find test DLLs
             $testDlls = @(Get-ChildItem -Path $targetRoot -Recurse -Filter "*.dll" -ErrorAction SilentlyContinue |
                 Where-Object {
                     $_.FullName -match "\\bin\\" -and
@@ -524,7 +515,7 @@ if ($effectiveStack -eq "dotnet" -and (Test-Path $normalizedCobertura)) {
         }
     }
 }
-# ── Metrics ───────────────────────────────────────────────────────────────────
+
 $testFiles           = @(Get-ChildItem -Path $evidenceTests -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -eq ".trx" -or $_.Name -match "(?i)junit|TEST-.*\.xml" })
 $sarifFiles          = @(Get-ChildItem -Path $evidenceStatic -Recurse -File -Filter "*.sarif" -ErrorAction SilentlyContinue)
 $coverageFilePresent = Test-Path $normalizedCobertura
@@ -532,14 +523,12 @@ $coverageFilePresent = Test-Path $normalizedCobertura
 $testMetrics     = Parse-TestMetrics      -TestFiles $testFiles
 $coverageMetrics = Parse-CoberturaMetrics -CoberturaPath $normalizedCobertura
 $sarifMetrics    = Parse-SarifMetrics     -SarifFiles $sarifFiles
-$failedTestNames = Get-FailedTestNames    -TestFiles $testFiles
+$failedTestNames = @(Get-FailedTestNames -TestFiles $testFiles)
 
-# Infra counters — exclude test phase (test failures = evidence, not infra failures)
 $attempted      = @($commandLog | Where-Object { -not $_.skipped }).Count
 $succeeded      = @($commandLog | Where-Object { $_.succeeded }).Count
 $failed         = @($commandLog | Where-Object { (-not $_.succeeded) -and (-not $_.skipped) -and ($_.label -notin @("test")) }).Count
 
-# Readiness index uses infra-only ratio so test failures don't drag it down
 $infraAttempted = @($commandLog | Where-Object { -not $_.skipped -and $_.label -notin @("test") }).Count
 $infraSucceeded = @($commandLog | Where-Object { $_.succeeded   -and $_.label -notin @("test") }).Count
 $infraRatio     = if ($infraAttempted -eq 0) { 1.0 } else { [math]::Min($infraSucceeded, $infraAttempted) / [double]$infraAttempted }
@@ -554,7 +543,6 @@ $managementTemplateReason  = if ($criticalInputsAvailable) { "critical-metrics-a
 $useFullManagementTemplate = $criticalInputsAvailable
 Write-Step "Management template selected: $(if ($useFullManagementTemplate) { 'full' } else { 'minimal' }) ($managementTemplateReason)"
 
-# FULL = evidence exists even if tests fail. PARTIAL = missing tools. FALLBACK = missing evidence files.
 $reportQuality = "FULL"
 if ($managementTemplateReason -like "*fallback-missing-critical-inputs*") {
     $reportQuality = "FALLBACK"
@@ -565,7 +553,13 @@ elseif ($missingTools.Count -gt 0) {
 
 $gateReasons = New-Object System.Collections.Generic.List[string]
 $decision    = "CHANGES_REQUIRED"
-if ($reportQuality -eq "FULL" -and $testMetrics.failed -eq 0 -and $sarifMetrics.errors -eq 0 -and $buildFailed -eq 0) {
+
+if ($reportQuality -eq "FULL" -and
+    $testMetrics.failed -eq 0 -and
+    $sarifMetrics.errors -eq 0 -and
+    $buildFailed -eq 0 -and
+    $coverageMetrics.linePct -ge 60 -and
+    $coverageMetrics.branchPct -ge 50) {
     $decision = "APPROVED_FOR_MERGE"
 }
 
@@ -576,9 +570,10 @@ if ($isStrict -and $reportQuality -in @("PARTIAL", "FALLBACK"))           { $dec
 if ($buildFailed -gt 0 -and [bool]$cfg.policy.failOnBuildError -and $isStrict) { $decision = "CHANGES_REQUIRED"; $gateReasons.Add("Strict mode: build failed.") | Out-Null }
 if ($sarifMetrics.errors -gt 0 -and $isStrict)                            { $decision = "CHANGES_REQUIRED"; $gateReasons.Add("Strict mode: error-level SARIF findings detected.") | Out-Null }
 if ($testMetrics.failed -gt 0)                                             { $decision = "CHANGES_REQUIRED"; $gateReasons.Add("$($testMetrics.failed) test(s) failed.") | Out-Null }
+if ($coverageMetrics.linePct -lt 60)                                       { $decision = "CHANGES_REQUIRED"; $gateReasons.Add("Line coverage $($coverageMetrics.linePct)% is below 60% threshold.") | Out-Null }
+if ($coverageMetrics.branchPct -lt 50)                                     { $decision = "CHANGES_REQUIRED"; $gateReasons.Add("Branch coverage $($coverageMetrics.branchPct)% is below 50% threshold.") | Out-Null }
 if ($decision -eq "CHANGES_REQUIRED" -and $gateReasons.Count -eq 0)       { $gateReasons.Add("Quality gate rules did not satisfy approval criteria.") | Out-Null }
 
-# ── Computed report variables ─────────────────────────────────────────────────
 $passRate             = [math]::Round($testMetrics.passed / [math]::Max($testMetrics.total, 1) * 100, 1)
 $confidenceScore      = [int]([math]::Round(($testMetrics.passed / [math]::Max($testMetrics.total,1)) * 60 + ($coverageMetrics.linePct / 100) * 30 + ([math]::Max(0, 100 - $sarifMetrics.errors * 10) / 100) * 10, 0))
 $lineCoverageStatus   = if ($coverageMetrics.linePct -ge 60)   { "PASS" } else { "FAIL" }
@@ -646,7 +641,6 @@ $diagnosticsLines = @(
     "| Fallback/partial reasons | $(if ($diagnosticReasons.Count -gt 0) { $diagnosticReasons -join '; ' } else { 'None' }) |"
 )
 
-# ── Engineering Snapshot ──────────────────────────────────────────────────────
 $engLines = New-Object System.Collections.Generic.List[string]
 $engLines.Add("# Engineering Snapshot") | Out-Null
 $engLines.Add("") | Out-Null
@@ -670,7 +664,7 @@ $engLines.Add("| Skipped | $($testMetrics.skipped) |") | Out-Null
 $engLines.Add("| Pass rate | $passRate% |") | Out-Null
 $engLines.Add("") | Out-Null
 $engLines.Add("## Failed Tests") | Out-Null
-if ($failedTestNames.Count -eq 0) {
+if (@($failedTestNames).Count -eq 0) {
     $engLines.Add("No failed tests.") | Out-Null
 } else {
     foreach ($name in $failedTestNames) { $engLines.Add("- $name") | Out-Null }
@@ -700,7 +694,6 @@ foreach ($entry in $commandLog) {
 $engLines.Add("") | Out-Null
 foreach ($line in $diagnosticsLines) { $engLines.Add($line) | Out-Null }
 
-# ── Management Snapshot ───────────────────────────────────────────────────────
 $mgmtLines = New-Object System.Collections.Generic.List[string]
 $mgmtLines.Add("# Management Snapshot") | Out-Null
 $mgmtLines.Add("") | Out-Null
@@ -755,7 +748,6 @@ if ($useFullManagementTemplate) {
 $mgmtLines.Add("") | Out-Null
 foreach ($line in $diagnosticsLines) { $mgmtLines.Add($line) | Out-Null }
 
-# ── Summary ───────────────────────────────────────────────────────────────────
 $summaryLines = @(
     "# Universal Quality Gate Summary",
     "",
@@ -770,7 +762,6 @@ $summaryLines = @(
     ""
 )
 
-# ── Coverage Report ───────────────────────────────────────────────────────────
 $coverageLines = New-Object System.Collections.Generic.List[string]
 $coverageLines.Add("# Coverage Report") | Out-Null
 $coverageLines.Add("") | Out-Null
@@ -790,7 +781,6 @@ $coverageLines.Add("- **P0**: Add tests for critical paths with 0% or very low c
 $coverageLines.Add("- **P1**: Raise line coverage above 60% and branch coverage above 50%.") | Out-Null
 $coverageLines.Add("- **P2**: Add edge-case and resilience tests to prevent regressions in CI.") | Out-Null
 
-# ── Test Report ───────────────────────────────────────────────────────────────
 $testLines = New-Object System.Collections.Generic.List[string]
 $testLines.Add("# Unit Test Execution Report") | Out-Null
 $testLines.Add("") | Out-Null
@@ -808,7 +798,7 @@ $testLines.Add("- Score: **$confidenceScore / 100**") | Out-Null
 $testLines.Add("- Method: 60% pass-rate signal + 30% line-coverage signal + 10% static-error penalty") | Out-Null
 $testLines.Add("") | Out-Null
 $testLines.Add("## Failed Tests Detail") | Out-Null
-if ($failedTestNames.Count -eq 0) {
+if (@($failedTestNames).Count -eq 0) {
     $testLines.Add("No failed tests.") | Out-Null
 } else {
     foreach ($name in $failedTestNames) { $testLines.Add("- $name") | Out-Null }
@@ -822,7 +812,6 @@ $testLines.Add("1. Reproduce any failed tests locally and patch root cause.") | 
 $testLines.Add("2. Add regression assertions for identified failure patterns.") | Out-Null
 $testLines.Add("3. Re-run dotnet test with TRX output and verify failed test count reduction.") | Out-Null
 
-# ── Static Quality Report ─────────────────────────────────────────────────────
 $staticLines = New-Object System.Collections.Generic.List[string]
 $staticLines.Add("# Static Quality Report") | Out-Null
 $staticLines.Add("") | Out-Null
@@ -851,7 +840,6 @@ $staticLines.Add("## Notes") | Out-Null
 $staticLines.Add("- SARIF files discovered: $($sarifFiles.Count)") | Out-Null
 $staticLines.Add("- Zero findings = clean static analysis pass for this run.") | Out-Null
 
-# ── PR Gate Summary ───────────────────────────────────────────────────────────
 $prGateLines = New-Object System.Collections.Generic.List[string]
 $prGateLines.Add("# PR Quality Gate Summary") | Out-Null
 $prGateLines.Add("") | Out-Null
@@ -877,7 +865,6 @@ $prGateLines.Add("- [$coverageCheck] Coverage threshold met for critical modules
 $prGateLines.Add("- [$sarifCheck] Static error findings triaged/fixed with evidence.") | Out-Null
 $prGateLines.Add("- [$evidenceCheck] Security-sensitive paths reviewed.") | Out-Null
 
-# ── Write all reports ─────────────────────────────────────────────────────────
 $engineeringReportPath = Join-Path $reportsDir "engineering-snapshot.md"
 $managementReportPath  = Join-Path $reportsDir "management-snapshot.md"
 $summaryReportPath     = Join-Path $reportsDir "quality-gate-summary.md"
@@ -902,7 +889,6 @@ Copy-Item -Path $testReportPath        -Destination (Join-Path $reportsDir "Test
 Copy-Item -Path $staticReportPath      -Destination (Join-Path $reportsDir "Static.md")      -Force
 Copy-Item -Path $prGateReportPath      -Destination (Join-Path $reportsDir "PRGate.md")      -Force
 
-# ── metrics.json ──────────────────────────────────────────────────────────────
 $requiredContractPaths = @(
     "status/metrics.json", "status/evidence-diagnostics.json",
     "evidence/tests/", "evidence/coverage/cobertura.xml",
@@ -982,7 +968,6 @@ $metricsPath = Join-Path $statusDir "metrics.json"
 $metrics | ConvertTo-Json -Depth 40 | Set-Content -Path $metricsPath -Encoding UTF8
 ($cfg | ConvertTo-Json -Depth 60) | Set-Content -Path (Join-Path $statusDir "effective-config.json") -Encoding UTF8
 
-# ── PDF ───────────────────────────────────────────────────────────────────────
 if ($GeneratePdf) {
     $renderScript = Join-Path $PSScriptRoot "render_reports_to_pdf.ps1"
     if (Test-Path $renderScript) {
